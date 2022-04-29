@@ -4,16 +4,20 @@
 \alias{fit.climate.response}
 \title{fit.climate.response}
 \usage{
-fit.climate.response(Y, parSmooth, indexReferenceYear, typeChangeVariable)
+fit.climate.response(Y, spar, Xmat, Xref, Xfut, typeChangeVariable)
 }
 \arguments{
 \item{Y}{matrix of simulation chains: \code{nS} x \code{nY}}
 
-\item{parSmooth}{smoothing parameter \code{spar} in \code{\link[stats]{smooth.spline}}: varies in [0,1]}
+\item{spar}{smoothing parameter \code{spar} in \code{\link[stats]{smooth.spline}}: varies in [0,1]}
 
-\item{indexReferenceYear}{index of the reference year}
+\item{Xmat}{matrix of predictors corresponding to the projections, e.g. time or global temperature.}
 
-\item{typeChangeVariable}{type of change variable: "abs" or "rel"}
+\item{Xref}{reference/control value of the predictor (e.g. the reference period).}
+
+\item{Xfut}{values of the predictor over which the ANOVA will be applied.}
+
+\item{typeChangeVariable}{type of change variable: "abs" (absolute, value by default) or "rel" (relative)}
 }
 \value{
 list with the following fields for each simulation chain:
@@ -33,9 +37,9 @@ of \code{nY} time steps (e.g. number of years).
 See \code{\link{QUALYPSO}} for further information on arguments \code{indexReferenceYear} and \code{typeChangeVariable}.
 }
 \references{
-Evin, G., B. Hingray, J. Blanchet, N. Eckert, S. Morin, and D. Verfaillie.
+Evin, G., B. Hingray, J. Blanchet, N. Eckert, S. Morin, and D. Verfaillie (2020)
 Partitioning Uncertainty Components of an Incomplete Ensemble of Climate Projections Using Data Augmentation.
-Journal of Climate. J. Climate, 32, 2423–2440. \url{https://doi.org/10.1175/JCLI-D-18-0606.1}.
+Journal of Climate. J. Climate, 32, 2423–2440. <doi:10.1175/JCLI-D-18-0606.1>.
 }
 \author{
 Guillaume Evin

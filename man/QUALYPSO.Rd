@@ -4,86 +4,147 @@
 \alias{QUALYPSO}
 \title{QUALYPSO}
 \usage{
-QUALYPSO(Y, scenAvail, vecYears = NULL, indexReferenceYear = NULL,
-  indexFutureYear = NULL, listOption = NULL)
+QUALYPSO(
+  Y,
+  scenAvail,
+  X = NULL,
+  Xref = NULL,
+  Xfut = NULL,
+  iFut = NULL,
+  listOption = NULL
+)
 }
 \arguments{
-\item{Y}{matrix \code{nS} x \code{nY} or array \code{nG} x \code{nS} x \code{nY} of climate projections}
+\item{Y}{matrix \code{nS} x \code{nY} or array \code{nG} x \code{nS} x \code{nY} of climate projections.}
 
-\item{scenAvail}{matrix of available combinations \code{nS} x \code{nEff}. The number of characteristics \code{nEff} corresponds to the
-number of main effects which will be included in the ANOVA model.}
+\item{scenAvail}{data.frame \code{nS} x \code{nEff} with the \code{nEff} characteristics
+(e.g. type of GCM) for each of the \code{nS} x \code{nS} scenarios. The number of characteristics
+ \code{nEff} corresponds to the number of main effects that will be included in the ANOVA model.}
 
-\item{vecYears}{(optional) vector of years corresponding to the projections (e.g. \code{vecYears=2001:2100}. Optional,
-mainly used for records. By default, a vector \code{1:nY} is created.}
+\item{X}{(optional) predictors corresponding to the projections, e.g. time or global temperature.
+It can be a vector if the predictor is the same for all scenarios (e.g. \code{X=2001:2100}) or
+a matrix of the same size as Y if these predictors are different for the scenarios. By default,
+a vector \code{1:nY} is created.}
 
-\item{indexReferenceYear}{(optional) index in \code{vecYears} corresponding to the control year. For example, if \code{vecYears=1980:2100}
-and we want to specify a control year equals to 1990, we indicate \code{indexReferenceYear=11} or, equivalently \code{indexReferenceYear=which(vecYears==1990)}
-\strong{if} \code{vecYears} is already available in the workspace}
+\item{Xref}{(optional) reference/control value of the predictor (e.g. the reference period).
+\code{Xref} can be a single value or a vector of length \code{nS} if \code{Xref} is different
+ for each climate projection. By default, \code{Xref} is taken as the minimum value of X.}
 
-\item{indexFutureYear}{index in \code{indexFutureYear} corresponding to a future year (similarly to \code{indexReferenceYear}). This index is necessary when
-\code{Y} is an array \code{nG} x \code{nS} x \code{nY} available for \code{nG} grid points. Indeed, in this case, we run QUALYPSO only for one future year.}
+\item{Xfut}{(optional) values of the predictor over which the ANOVA will be applied. It must be
+a vector of values within the range of values of X. By default, it corresponds to X if X is a vector,
+\code{1:nY} if X is \code{NULL} or a vector of 10 values equally spaced between the minimum and
+maximum values of X if X is a matrix.}
+
+\item{iFut}{index in \code{1:length(Xfut)} corresponding to a future predictor value . This index is
+necessary when \code{Y} is an array \code{nG} x \code{nS} x \code{nY} available for \code{nG} grid points.
+Indeed, in this case, we run QUALYPSO only for one future predictor.}
 
 \item{listOption}{(optional) list of options
 \itemize{
-  \item \strong{parSmooth}: smoothing parameter \code{spar} in \link[stats]{smooth.spline}: typically (but not necessarily) in (0,1]
-  \item \strong{typeChangeVariable}: type of change variable: "abs" (absolute, value by default) or "rel" (relative)
-  \item \strong{nBurn}: number of burn-in samples (default: 1000). If \code{nBurn} is too small, the convergence of MCMC chains might not be obtained.
-  \item \strong{nKeep}: number of kept samples (default: 2000). If \code{nKeep} is too small, MCMC samples might not be represent correctly the posterior
+  \item \strong{spar}: smoothing parameter \code{spar} in \link[stats]{smooth.spline}: typically (but not necessarily) in (0,1].
+  \item \strong{typeChangeVariable}: type of change variable: "abs" (absolute, value by default) or "rel" (relative).
+  \item \strong{ANOVAmethod}: ANOVA method: "QUALYPSO" applies the method described in Evin et al. (2020),
+  "lm" applies a simple linear model to estimate the main effects.
+  \item \strong{nBurn}: if \code{ANOVAmethod=="QUALYPSO"}, number of burn-in samples (default: 1000).
+  If \code{nBurn} is too small, the convergence of MCMC chains might not be obtained.
+  \item \strong{nKeep}: if \code{ANOVAmethod=="QUALYPSO"}, number of kept samples (default: 2000).
+  If \code{nKeep} is too small, MCMC samples might not represent correctly the posterior
   distributions of inferred parameters.
-  \item \strong{nCluster}: number of clusters used for the parallelization (default: 1). When \code{nCluster} is greater than one, parallelization is used to
+  \item \strong{nCluster}: number of clusters used for the parallelization (default: 1).
+  When \code{nCluster} is greater than one, parallelization is used to
   apply \code{QUALYPSO} over multiple time steps or grid points simultaneously.
-  \item \strong{quantileCompress}: vector of probabilities (in [0,1]) for which we compute the quantiles from the posterior distributions
-   \code{quantileCompress = c(0.005,0.025,0.05,0.1,0.25,0.33,0.5,0.66,0.75,0.9,0.95,0.975,0.995)} by default
+  \item \strong{probCI}: probability (in [0,1]) for the confidence intervals, \code{probCI = 0.9} by default.
+  \item \strong{quantilePosterior}: vector of probabilities (in [0,1]) for which
+  we compute the quantiles from the posterior distributions
+   \code{quantilePosterior = c(0.005,0.025,0.05,0.1,0.25,0.33,0.5,0.66,0.75,0.9,0.95,0.975,0.995)} by default.
 }}
 }
 \value{
-list with the following fields:
+List providing the results for each of the \code{n} values of \code{Xfut}
+if \code{Y} is a matrix or for each grid point if \code{Y} is an array, with the following fields:
 \itemize{
-  \item \strong{CLIMATEESPONSE}: list of climate change responses and corresponding internal variability. Contains \code{phiStar} (climate change responses),
-  \code{etaStar} (deviation from the climate change responses as a result of internal variability), and \code{phi} (fitted climate responses)
-  \item \strong{BAYES}: list of inferred quantities: quantiles from the posterior distributions are provided
+  \item \strong{CLIMATEESPONSE}: list of climate change responses and
+ corresponding internal variability. Contains \code{phiStar} (climate change
+ responses), \code{etaStar} (deviation from the climate change responses as
+ a result of internal variability), and \code{phi} (fitted climate responses).
+  \item \strong{GRANDMEAN}: List of estimates for the grand mean:
   \itemize{
-      \item GRANDMEAN: Grand mean
-      \item MAINEFFECT: Main effects
-      \item RESIDUALVAR_MEAN: mean of the posterior distribution for the residual variability \eqn{\sigma^2}
-      \item RESIDUALVAR_QUANT: quantiles of the posterior distribution for the residual variability \eqn{\sigma^2}
-      \item INTERNALVAR: Internal variability (constant over time)
-      \item EFFECTVAR: Variability related to the main effects (i.e. variability between the different RCMs, GCMs,..)
-      \item TOTALVAR: total variability, i.e. the sum of internal variability, residual variability and
-      variability related to the main effect
-      \item DECOMPVAR: Decomposition of the total variability for each component
-      \item CONTRIB_EACH_EFFECT: Contribution of each individual effect to its component (percentage), e.g. what
-      is the contribution of GCM1 to the variability related to GCMs
-      \item CHANGEBYEFFECT: For each main effect, mean change by type of effect, i.e. mean change by scenario (RCP4.5)
+     \item \strong{MEAN}: vector of length \code{n} of means.
+     \item \strong{SD}: vector of length \code{n} of standard dev.
+     if \code{ANOVAmethod=="QUALYPSO"}.
+     \item \strong{CI}: matrix \code{n} x 2 of credible intervals of
+     probability \code{probCI} given in \code{listOption} if
+     \code{ANOVAmethod=="QUALYPSO"}.
+     \item \strong{QUANT}: matrix \code{n} x \code{nQ} of quantiles of
+     probability \code{quantilePosterior} given in \code{listOption} if
+     \code{ANOVAmethod=="QUALYPSO"}.
   }
-  \item \strong{POINT}: list of point estimates: mean of the posterior distributions
+  \item \strong{MAINEFFECT}: List of estimates for the main effects. For each
+  main effect (GCM, RCM,..), each element of the list contains a list with:
   \itemize{
-      \item GRANDMEAN: Grand mean
-      \item MAINEFFECT: Main effects
-      \item RESIDUALVAR: Variance of residual errors computed from the differences between the climate change responses
-      and the additive anova formula (grand mean + main effects)
-      \item INTERNALVAR: Internal variability (constant over time)
-      \item EFFECTVAR: Variability related to the main effects (i.e. variability between the different RCMs, GCMs,..)
-      \item TOTALVAR: total variability, i.e. the sum of internal variability, residual variability and
-      variability related to the main effect
-      \item DECOMPVAR: Decomposition of the total variability for each component
-      \item CONTRIB_EACH_EFFECT: Contribution of each individual effect to its component (percentage), e.g. what
-      is the contribution of GCM1 to the variability related to GCMs
-      \item CHANGEBYEFFECT: For each main effect, mean change by type of effect, i.e. mean change by scenario (RCP4.5)
-      \item RESERR: differences between the climate change responses and the additive anova formula (grand mean + main effects)
+     \item \strong{MEAN}: matrix \code{n} x \code{nTypeEff}
+     \item \strong{SD}: matrix \code{n} x \code{nTypeEff} of standard dev.
+     if \code{ANOVAmethod=="QUALYPSO"}.
+     \item \strong{CI}: array \code{n} x 2 x \code{nTypeEff} of credible
+     intervals of probability \code{probCI} given in \code{listOption} if
+     \code{ANOVAmethod=="QUALYPSO"}.
+     \item \strong{QUANT}: array \code{n} x \code{nQ} x \code{nTypeEff} of
+     quantiles of probability \code{quantilePosterior} given in
+     \code{listOption} if \code{ANOVAmethod=="QUALYPSO"}.
   }
-
-  \item \strong{vecYears}: vector of years
-  \item \strong{vecYearsANOVA}: vector of years for the ANOVA decomposition (start at \code{indexReferenceYear})
+  \item \strong{CHANGEBYEFFECT}: For each main effect, list of estimates for
+  the mean change by main effect, i.e. mean change by scenario. For
+  each main effect (GCM, RCM,..), each element of the list contains a list with:
+  \itemize{
+     \item \strong{MEAN}: matrix \code{n} x \code{nTypeEff}
+     \item \strong{SD}: matrix \code{n} x \code{nTypeEff} of standard dev.
+     if \code{ANOVAmethod=="QUALYPSO"}.
+     \item \strong{CI}: array \code{n} x 2 x \code{nTypeEff} of credible
+     intervals of probability \code{probCI} given in \code{listOption} if
+     \code{ANOVAmethod=="QUALYPSO"}.
+     \item \strong{QUANT}: array \code{n} x \code{nQ} x \code{nTypeEff} of
+     quantiles of probability \code{quantilePosterior} given in
+     \code{listOption} if \code{ANOVAmethod=="QUALYPSO"}.
+  }
+  \item \strong{EFFECTVAR}: Matrix \code{n} x \code{nTypeEff} giving, for each
+  time variability related to the main effects (i.e.
+  variability between the different RCMs, GCMs,..).
+  \item \strong{CONTRIB_EACH_EFFECT}: Contribution of each individual effect
+  to its component (percentage), e.g. what is the contribution of GCM1 to the
+   variability related to GCMs. For each main effect (GCM, RCM,..), each
+   element of the list contains a matrix \code{n} x \code{nTypeEff}
+  \item \strong{RESIDUALVAR}: List of estimates for the variance of the
+  residual errors:
+  \itemize{
+     \item \strong{MEAN}: vector of length \code{n}.
+     \item \strong{SD}: vector of length \code{n} of standard dev.
+     if \code{ANOVAmethod=="QUALYPSO"}.
+     \item \strong{CI}: matrix \code{n} x 2 of credible intervals of
+     probability \code{probCI} given in \code{listOption} if
+     \code{ANOVAmethod=="QUALYPSO"}.
+     \item \strong{QUANT}: matrix \code{n} x \code{nQ} of quantiles of
+     probability \code{quantilePosterior} given in \code{listOption} if
+     \code{ANOVAmethod=="QUALYPSO"}.
+  }
+  \item \strong{INTERNALVAR}: Internal variability (constant over time)
+  \item \strong{TOTALVAR}: total variability, i.e. the sum of internal variability,
+      residual variability and variability related to the main effects
+  \item \strong{DECOMPVAR}: Decomposition of the total variability for each component
+  \item \strong{RESERR}: differences between the climate change responses and the additive anova formula (grand mean + main effects)
+  \item \strong{Xmat}: matrix of predictors
+  \item \strong{Xref}: reference predictor values
+  \item \strong{Xfut}: future predictor values
   \item \strong{paralType}: type of parallelisation (Time or Grid)
   \item \strong{namesEff}: names of the main effects
   \item \strong{Y}: matrix of available combinations given as inputs
-  \item \strong{listOption}: list of options used to obtained these results (obtained from \code{\link{QUALYPSO.check.option}})
-  \item \strong{listScenarioInput}: list of scenario characteristics (obtained from \code{\link{QUALYPSO.process.scenario}})
+  \item \strong{listOption}: list of options used to obtained these results
+  (obtained from \code{\link{QUALYPSO.check.option}})
+  \item \strong{listScenarioInput}: list of scenario characteristics
+  (obtained from \code{\link{QUALYPSO.process.scenario}})
 }
 }
 \description{
-Partition uncertainty in climate responses using an ANOVA inferred with a Bayesian approach.
+Partition uncertainty in climate responses using an ANOVA applied to climate change responses.
 }
 \examples{
 ##########################################################################
@@ -105,13 +166,13 @@ effRCM2 = t*-1
 scenGCM1RCM1 = effGCM1 + effRCM1 + rnorm(n=n,sd=0.5)
 scenGCM1RCM2 = effGCM1 + effRCM2 + rnorm(n=n,sd=0.5)
 scenGCM2RCM1 = effGCM2 + effRCM1 + rnorm(n=n,sd=0.5)
-Y = rbind(scenGCM1RCM1,scenGCM1RCM2,scenGCM2RCM1)
+Y.synth = rbind(scenGCM1RCM1,scenGCM1RCM2,scenGCM2RCM1)
 
 # Here, scenAvail indicates that the first scenario is obtained with the combination of the
 # GCM "GCM1" and RCM "RCM1", the second scenario is obtained with the combination of
 # the GCM "GCM1" and RCM "RCM2" and the third scenario is obtained with the combination
 # of the GCM "GCM2" and RCM "RCM1".
-scenAvail = data.frame(GCM=c('GCM1','GCM1','GCM2'),RCM=c('RCM1','RCM2','RCM1'))
+scenAvail.synth = data.frame(GCM=c('GCM1','GCM1','GCM2'),RCM=c('RCM1','RCM2','RCM1'))
 
 ##########################################################################
 # RUN QUALYPSO
@@ -120,45 +181,97 @@ scenAvail = data.frame(GCM=c('GCM1','GCM1','GCM2'),RCM=c('RCM1','RCM2','RCM1'))
 # - Y: Climate projections for nS scenarions and nY time steps. if Y is a matrix nS x nY, we
 # run QUALYPSO nY times, for each time step. If Y is an array nG x nS x nY, for nG grid points,
 # we run QUALYPSO nG times, for each grid point, for one time step specified using the argument
-# indexFutureYear.
+# iFut
 # - scenAvail: matrix or data.frame of available combinations nS x nEff. The number of
-# characteristics nEff corresponds to the number of main effects which will be included in the
+# characteristics nEff corresponds to the number of main effects that will be included in the
 # ANOVA model. In the following example, we have nEff=2 main effects corresponding to the GCMs
 # and RCMs.
 
-# Many options can be specified in the argument "listOption". Here, we change the default values
-# for nBurn and nKeep in order to speed up computation time for this small example. However, it must
-# be noticed that convergence and sampling of the posterior distributions often require higher
-# values for these two parameters.
-listOption = list(nBurn=100,nKeep=100,quantileCompress=c(0.025,0.5,0.975))
+# Many options can be specified in the argument "listOption". When ANOVAmethod=="QUALYPSO"
+# a Bayesian inference is performed. Here, we change the default values for nBurn and nKeep
+# in order to speed up computation time for this small example. However, it must be noticed
+# that convergence and sampling of the posterior distributions often require higher values
+#  for these two arguments.
+listOption = list(nBurn=100,nKeep=100,ANOVAmethod="QUALYPSO",quantilePosterior=c(0.025,0.5,0.975))
 
 # run QUALYPSO
-QUALYPSOOUT = QUALYPSO(Y=Y, scenAvail=scenAvail, vecYears=2001:2020, listOption=listOption)
+QUALYPSO.synth = QUALYPSO(Y=Y.synth, scenAvail=scenAvail.synth, X=2001:2020, listOption=listOption)
 
 ##########################################################################
 # SOME PLOTS
 ##########################################################################
 # plot grand mean
-plotQUALYPSOgrandmean(QUALYPSOOUT)
+plotQUALYPSOgrandmean(QUALYPSO.synth,xlab="Years")
 
 # plot main GCM effects
-plotQUALYPSOeffect(QUALYPSOOUT,iEff=1)
+plotQUALYPSOeffect(QUALYPSO.synth,nameEff="GCM",xlab="Years")
 
 # plot main RCM effects
-plotQUALYPSOeffect(QUALYPSOOUT,iEff=2)
+plotQUALYPSOeffect(QUALYPSO.synth,nameEff="RCM",xlab="Years")
 
 # plot fraction of total variance for the differences sources of uncertainty
-plotQUALYPSOTotalVarianceDecomposition(QUALYPSOOUT)
+plotQUALYPSOTotalVarianceDecomposition(QUALYPSO.synth,xlab="Years")
 
 # plot mean prediction and total variance with the differences sources of uncertainty
-# for one scenario (e.g. a RCP scenario)
-plotQUALYPSOTotalVarianceByScenario(QUALYPSOOUT,iEff=1,nameScenario='GCM1')
+plotQUALYPSOMeanChangeAndUncertainties(QUALYPSO.synth,xlab="Years")
+
+#____________________________________________________________
+# EXAMPLE OF QUALYPSO WHEN THE PREDICTOR IS TIME
+#____________________________________________________________
+
+# list of options
+listOption = list(typeChangeVariable='abs')
+
+# call QUALYPSO
+QUALYPSO.time = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_time_vec,Xref=1999,
+                         Xfut=Xfut_time,listOption=listOption)
+
+# grand mean effect
+plotQUALYPSOgrandmean(QUALYPSO.time,xlab="Years")
+
+# main GCM effects
+plotQUALYPSOeffect(QUALYPSO.time,nameEff="GCM",xlab="Years")
+
+# main RCM effects
+plotQUALYPSOeffect(QUALYPSO.time,nameEff="RCM",xlab="Years")
+
+# mean change and associated uncertainties
+plotQUALYPSOMeanChangeAndUncertainties(QUALYPSO.time,xlab="Years")
+
+# variance decomposition
+plotQUALYPSOTotalVarianceDecomposition(QUALYPSO.time,xlab="Years")
+
+#____________________________________________________________
+# EXAMPLE OF QUALYPSO WHEN THE PREDICTOR IS THE GLOBAL TEMPERATURE
+#____________________________________________________________
+
+# list of options
+listOption = list(typeChangeVariable='abs')
+
+# call QUALYPSO
+QUALYPSO.globaltas = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_globaltas,Xref=13,
+                              Xfut=Xfut_globaltas,listOption=listOption)
+
+# grand mean effect
+plotQUALYPSOgrandmean(QUALYPSO.globaltas,xlab="Global temperature (Celsius)")
+
+# main GCM effects
+plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="GCM",xlab="Global temperature (Celsius)")
+
+# main RCM effects
+plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="RCM",xlab="Global temperature (Celsius)")
+
+# mean change and associated uncertainties
+plotQUALYPSOMeanChangeAndUncertainties(QUALYPSO.globaltas,xlab="Global temperature (Celsius)")
+
+# variance decomposition
+plotQUALYPSOTotalVarianceDecomposition(QUALYPSO.globaltas,xlab="Global temperature (Celsius)")
 
 }
 \references{
-Evin, G., B. Hingray, J. Blanchet, N. Eckert, S. Morin, and D. Verfaillie.
+Evin, G., B. Hingray, J. Blanchet, N. Eckert, S. Morin, and D. Verfaillie (2020)
 Partitioning Uncertainty Components of an Incomplete Ensemble of Climate Projections Using Data Augmentation.
-Journal of Climate. \url{https://doi.org/10.1175/JCLI-D-18-0606.1}.
+Journal of Climate. <doi:10.1175/JCLI-D-18-0606.1>.
 }
 \author{
 Guillaume Evin

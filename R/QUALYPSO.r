@@ -1,8 +1,8 @@
 ###===============================###===============================###
 ### Guillaume Evin
-### 02/05/2019, Grenoble
-###  IRSTEA
-### guillaume.evin@irstea.fr
+### 30/06/2022, Grenoble
+###  INRAE
+### guillaume.evin@inrae.fr
 ###
 ### These functions use data augmentation and Bayesian techniques for the assessment
 ### of single-member and incomplete ensembles of climate projections.
@@ -90,17 +90,19 @@ get.Qmat = function(p){
 #' of \code{nY} time steps (e.g. number of years).
 #'
 #' @param Y matrix of simulation chains: \code{nS} x \code{nY}
-#' @param spar smoothing parameter \code{spar} in \code{\link[stats]{smooth.spline}}: varies in [0,1]
+#' @param args.smooth.spline list of arguments to be passed to \code{\link[stats]{smooth.spline}}.
+#' The \code{names} attribute of \code{args.smooth.spline} gives the argument
+#' names (see \code{\link[base]{do.call}}).
 #' @param Xmat matrix of predictors corresponding to the projections, e.g. time or global temperature.
-#' @param Xref reference/control value of the predictor (e.g. the reference period).
 #' @param Xfut values of the predictor over which the ANOVA will be applied.
 #' @param typeChangeVariable type of change variable: "abs" (absolute, value by default) or "rel" (relative)
 #'
 #' @return list with the following fields for each simulation chain:
 #' \itemize{
-#'   \item \strong{phiStar}: climate change response
-#'   \item \strong{etaStar}: internal variability
-#'   \item \strong{phi}: raw trend obtained using \link[stats]{smooth.spline}
+#'   \item \strong{phiStar}: \code{nS x nF}, climate change responses
+#'   \item \strong{etaStar}: \code{nS x nY}, deviation from the climate change response
+#'   due to the internal variability, for \code{Xmat}
+#'   \item \strong{phi}: \code{nS x nF}, raw trends obtained using \link[stats]{smooth.spline}
 #'   \item \strong{climateResponse}: output from \link[stats]{smooth.spline}
 #'   \item \strong{varInterVariability}: scalar, internal variability component of the MME
 #' }
@@ -115,7 +117,7 @@ get.Qmat = function(p){
 #' @references Evin, G., B. Hingray, J. Blanchet, N. Eckert, S. Morin, and D. Verfaillie (2020)
 #' Partitioning Uncertainty Components of an Incomplete Ensemble of Climate Projections Using Data Augmentation.
 #' Journal of Climate. J. Climate, 32, 2423–2440. <doi:10.1175/JCLI-D-18-0606.1>.
-fit.climate.response = function(Y, spar, Xmat, Xref, Xfut, typeChangeVariable){
+fit.climate.response = function(Y, args.smooth.spline, Xmat, Xfut, typeChangeVariable){
 
   # number of simulation chains
   nS = nrow(Y)
@@ -126,20 +128,26 @@ fit.climate.response = function(Y, spar, Xmat, Xref, Xfut, typeChangeVariable){
   # number of future time/global.tas
   nFut = length(Xfut)
 
+  # Xref is the reference value for X used to compute absolute or relative changes
+  # usually indicating the reference (control) period of the current climate
+  # For simplicity, we consider that it is the first Xfut value (i.e. first year
+  # in Xfut or minimum global temperature)
+  Xref = Xfut[1]
+
   # prepare outputs
   phiStar = phi = matrix(nrow=nS,ncol=nFut)
-  etaStar = matrix(nrow=nS,ncol=nY)
+  etaStar = YStar = matrix(nrow=nS,ncol=nY)
   climateResponse = list()
 
   for(iS in 1:nS){
     # projection for this simulation chain
     Ys = Y[iS,]
     Xs = Xmat[iS,]
-    Xrefs = Xref[iS]
 
     # fit a smooth signal (smooth cubic splines)
     zz = !is.na(Ys)
-    smooth.spline.out<-stats::smooth.spline(Xs[zz],Ys[zz],spar=spar)
+    smooth.spline.out<-do.call(what = stats::smooth.spline,
+                               args=c(list(x=Xs[zz],y=Ys[zz]),args.smooth.spline))
 
     # store spline object
     climateResponse[[iS]] = smooth.spline.out
@@ -151,7 +159,7 @@ fit.climate.response = function(Y, spar, Xmat, Xref, Xfut, typeChangeVariable){
     phiS = predict(smooth.spline.out, Xfut)$y
 
     # climate response of the reference/control time/global tas
-    phiC = predict(smooth.spline.out, Xrefs)$y
+    phiC = predict(smooth.spline.out, Xref)$y
 
     # store climate response for this simulation chain
     phi[iS,] = phiS
@@ -161,10 +169,12 @@ fit.climate.response = function(Y, spar, Xmat, Xref, Xfut, typeChangeVariable){
       # Eq. 5
       phiStar[iS,] = phiS-phiC
       etaStar[iS,] = Ys-phiY
+      YStar[iS,] = Ys-phiC
     }else if(typeChangeVariable=='rel'){
       # Eq. 6
       phiStar[iS,] = phiS/phiC-1
       etaStar[iS,] = (Ys-phiY)/phiC
+      YStar[iS,] = (Ys-phiC)/phiC
     }else{
       stop("fit.climate.response: argument type.change.var must be equal to 'abs' (absolute changes) or 'rel' (relative changes)")
     }
@@ -173,10 +183,11 @@ fit.climate.response = function(Y, spar, Xmat, Xref, Xfut, typeChangeVariable){
   # Variance related to the internal variability: considered constant over the time period
   # (see Eq. 22 and 23 in Hingray and Said, 2014). We use a direct empirical estimate
   # of the variance of eta for each simulation chain and take the mean, see Eq. 19
-  varInterVariability = mean(apply(etaStar,2,var),na.rm=T)
+  varInterVariability = mean(apply(etaStar,2,var,na.rm=T),na.rm=T)
 
   # return objects
-  return(list(phiStar=phiStar,etaStar=etaStar,phi=phi,climateResponse=climateResponse,varInterVariability=varInterVariability))
+  return(list(phiStar=phiStar,etaStar=etaStar,YStar=YStar,phi=phi,
+              climateResponse=climateResponse,varInterVariability=varInterVariability))
 }
 
 
@@ -315,7 +326,7 @@ QUALYPSO.ANOVA.i = function(phiStar.i, nMCMC, listScenarioInput){
       # number of factors for each type of effect (i.e. number of GCMs, RCMs)
       n = nTypeEff[i.eff]
       # marginal sums
-      mar.diff = Rfast::group.sum(X.shift,indexEffInCompScen[,i.eff])
+      mar.diff = Rfast::group(X.shift,indexEffInCompScen[,i.eff],method="sum")
       # arguments of full conditional posterior distribution
       V = as.numeric((1/s2)*(t(Qmat[[i.eff]]) %*% mar.diff))
       Psi = 1/(nComp/(s2*n)+1/s2eff)
@@ -413,12 +424,11 @@ QUALYPSO.check.option = function(listOption){
     listOption = list()
   }
 
-  # spar
-  if('spar' %in% names(listOption)){
-    spar = listOption[['spar']]
-    if(!(is.numeric(spar)&(spar>0&spar<=10))) stop('spar must be in ]0,10]')
+  # args.smooth.spline
+  if('args.smooth.spline' %in% names(listOption)){
+    args.smooth.spline = listOption[['args.smooth.spline']]
   }else{
-    listOption[['spar']] = 1
+    listOption[['args.smooth.spline']] = list(spar=1)
   }
 
   # ANOVAmethod
@@ -589,15 +599,12 @@ QUALYPSO.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
       Anova.POST[[i]] = QUALYPSO.ANOVA.i(phiStar.i=phiStar[,i], nMCMC=listOption$nMCMC,listScenarioInput = listScenarioInput)
     }
   }else{
-    cl <- parallel::makeCluster(listOption$nCluster)
-    doParallel::registerDoParallel(cl)
     i = NULL # avoid warning during check
     Anova.POST <- foreach(i=1:n, .multicombine=TRUE,
                           .export=c("QUALYPSO.ANOVA.i")) %dopar% {
                             POST.out = QUALYPSO.ANOVA.i(phiStar.i=phiStar[,i], nMCMC=listOption$nMCMC,listScenarioInput = listScenarioInput)
                             return(POST.out)
                           }
-    parallel::stopCluster(cl)
   }
 
 
@@ -671,6 +678,7 @@ QUALYPSO.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 
   # main effects
   for(i.eff in 1:nEff){
+    eff = namesEff[i.eff]
     #============
     # MAINEFFECT
     #============
@@ -686,7 +694,7 @@ QUALYPSO.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
     lHatMain$CI = aperm(eff.ci, c(2,1,3))
     eff.quant = apply(eff.POST,c(1,3),quantile,probs=qPost)
     lHatMain$QUANT = aperm(eff.quant, c(2,1,3))
-    MAINEFFECT[[namesEff[i.eff]]] = lHatMain
+    MAINEFFECT[[eff]] = lHatMain
 
     #===============
     # CHANGEBYEFFECT
@@ -703,7 +711,7 @@ QUALYPSO.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
     lHatchange$CI = aperm(eff.ci, c(2,1,3))
     eff.quant = apply(meanChange.POST,c(1,3),quantile,probs=qPost)
     lHatchange$QUANT = aperm(eff.quant, c(2,1,3))
-    CHANGEBYEFFECT[[namesEff[i.eff]]] = lHatchange
+    CHANGEBYEFFECT[[eff]] = lHatchange
 
     #============
     # EFFECTVAR
@@ -723,7 +731,7 @@ QUALYPSO.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
       # contribution of this individual effect, as a percentage
       matContrib[,iIndEff] = indEff2/infEff2Tot
     }
-    CONTRIB_EACH_EFFECT[[namesEff[i.eff]]] = matContrib
+    CONTRIB_EACH_EFFECT[[eff]] = matContrib
   }
 
 
@@ -888,6 +896,7 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 
   # main effects
   for(i.eff in 1:nEff){
+    eff = namesEff[i.eff]
     #============
     # MAINEFFECT
     #============
@@ -896,35 +905,32 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
     lHat$MEAN = matrix(data = 0, nrow = n, ncol = nTypeEff[i.eff])
     for(i in 1:n){
       lm.out.i = lm.out[[i]]
-      matchEff = match(listEff[[i.eff]],listEff.LM[[namesEff[i.eff]]])
+      matchEff = match(listEff[[i.eff]],listEff.LM[[eff]])
       e.raw = lm.out.i$coefficients[lm.out.i$assign==i.eff]
       e.unsorted = c(e.raw,-sum(e.raw))
       lHat$MEAN[i,] = e.unsorted[matchEff]
     }
-    MAINEFFECT[[namesEff[i.eff]]] = lHat
+    MAINEFFECT[[eff]] = lHat
 
 
     #===============
     # CHANGEBYEFFECT
     #===============
-    # retrieve estimates for the mean change by effect
-    CHANGEBYEFFECT = MAINEFFECT
-    for(i in 1:n){
-      changeHat = CHANGEBYEFFECT[[namesEff[i.eff]]]$MEAN[i,] + GRANDMEAN$MEAN[i]
-      CHANGEBYEFFECT[[namesEff[i.eff]]]$MEAN[i,] = changeHat
-    }
+    changeHat = list()
+    changeHat$MEAN = MAINEFFECT[[eff]]$MEAN + replicate(nTypeEff[i.eff],GRANDMEAN$MEAN)
+    CHANGEBYEFFECT[[eff]] = changeHat
 
     #============
     # EFFECTVAR
     #============
     # predictive variance: mean of variances, which correspond to the mean of squares since the mean is 0 by constraint (see Eq 16, 17 and 18)
-    EFFECTVAR[,i.eff] = apply(MAINEFFECT[[namesEff[i.eff]]]$MEAN^2,1,mean)
+    EFFECTVAR[,i.eff] = apply(MAINEFFECT[[eff]]$MEAN^2,1,mean)
 
     #============
     # CONTRIB_EACH_EFFECT
     #============
     matContrib = matrix(data=0,nrow=n,ncol=nTypeEff[i.eff])
-    AllEff2 = MAINEFFECT[[namesEff[i.eff]]]$MEAN^2
+    AllEff2 = MAINEFFECT[[eff]]$MEAN^2
     for(iIndEff in 1:nTypeEff[i.eff]){
       # individual effect squared
       indEff2 = AllEff2[,iIndEff]
@@ -933,7 +939,7 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
       # contribution of this individual effect, as a percentage
       matContrib[,iIndEff] = indEff2/infEff2Tot
     }
-    CONTRIB_EACH_EFFECT[[namesEff[i.eff]]] = matContrib
+    CONTRIB_EACH_EFFECT[[eff]] = matContrib
   }
 
 
@@ -957,25 +963,26 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 #'
 #' @param Y matrix \code{nS} x \code{nY} or array \code{nG} x \code{nS} x \code{nY} of climate projections.
 #' @param scenAvail data.frame \code{nS} x \code{nEff} with the \code{nEff} characteristics
-#' (e.g. type of GCM) for each of the \code{nS} x \code{nS} scenarios. The number of characteristics
+#' (e.g. type of GCM) for each of the \code{nS} scenarios. The number of characteristics
 #'  \code{nEff} corresponds to the number of main effects that will be included in the ANOVA model.
 #' @param X (optional) predictors corresponding to the projections, e.g. time or global temperature.
 #' It can be a vector if the predictor is the same for all scenarios (e.g. \code{X=2001:2100}) or
 #' a matrix of the same size as Y if these predictors are different for the scenarios. By default,
 #' a vector \code{1:nY} is created.
-#' @param Xref (optional) reference/control value of the predictor (e.g. the reference period).
-#' \code{Xref} can be a single value or a vector of length \code{nS} if \code{Xref} is different
-#'  for each climate projection. By default, \code{Xref} is taken as the minimum value of X.
-#' @param Xfut (optional) values of the predictor over which the ANOVA will be applied. It must be
+#' @param Xfut (optional) \code{nF} values of the predictor over which the ANOVA will be applied. It must be
 #' a vector of values within the range of values of X. By default, it corresponds to X if X is a vector,
 #' \code{1:nY} if X is \code{NULL} or a vector of 10 values equally spaced between the minimum and
 #' maximum values of X if X is a matrix.
-#' @param iFut index in \code{1:length(Xfut)} corresponding to a future predictor value . This index is
+#' @param iFut index in \code{1:nF} corresponding to a future predictor value . This index is
 #' necessary when \code{Y} is an array \code{nG} x \code{nS} x \code{nY} available for \code{nG} grid points.
-#' Indeed, in this case, we run QUALYPSO only for one future predictor.
+#' Indeed, in this case, we run QUALYPSO only for one future predictor. The first value defines the reference
+#' period or warming level.
 #' @param listOption (optional) list of options
 #' \itemize{
-#'   \item \strong{spar}: smoothing parameter \code{spar} in \link[stats]{smooth.spline}: typically (but not necessarily) in (0,1].
+#'    \item \strong{args.smooth.spline}: list of arguments to be passed to
+#'    \code{\link[stats]{smooth.spline}}. The \code{names} attribute of
+#'    \code{args.smooth.spline} gives the argument names (see \code{\link[base]{do.call}}).
+#'    The default option runs \code{smooth.spline} with \code{spar}=1.
 #'   \item \strong{typeChangeVariable}: type of change variable: "abs" (absolute, value by default) or "rel" (relative).
 #'   \item \strong{ANOVAmethod}: ANOVA method: "QUALYPSO" applies the method described in Evin et al. (2020),
 #'   "lm" applies a simple linear model to estimate the main effects.
@@ -991,6 +998,11 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 #'   \item \strong{quantilePosterior}: vector of probabilities (in [0,1]) for which
 #'   we compute the quantiles from the posterior distributions
 #'    \code{quantilePosterior = c(0.005,0.025,0.05,0.1,0.25,0.33,0.5,0.66,0.75,0.9,0.95,0.975,0.995)} by default.
+#'   \item \strong{climResponse}: NULL by default. If it is provided, it must correspond to the outputs
+#'   of \code{\link{fit.climate.response}}, i.e. a list with \code{phiStar} [nS x nF], \code{etaStar} [nS x nY],
+#'    \code{phi} [nS x nF] and \code{varInterVariability} [scalar] if \code{Y} is a matrix [nS x nY],
+#'    or a list with \code{phiStar} [nG x nS x nF], \code{etaStar} [nG x nS x nY], \code{phi} [nG x nS x nF] and
+#'     \code{varInterVariability} vector of length \code{nG} if \code{Y} is an array [nG x nS x nY].
 #' }
 #'
 #' @return  List providing the results for each of the \code{n} values of \code{Xfut}
@@ -999,7 +1011,8 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 #'   \item \strong{CLIMATEESPONSE}: list of climate change responses and
 #'  corresponding internal variability. Contains \code{phiStar} (climate change
 #'  responses), \code{etaStar} (deviation from the climate change responses as
-#'  a result of internal variability), and \code{phi} (fitted climate responses).
+#'  a result of internal variability), \code{Ystar} (change variable from the
+#'  projections),and \code{phi} (fitted climate responses).
 #'   \item \strong{GRANDMEAN}: List of estimates for the grand mean:
 #'   \itemize{
 #'      \item \strong{MEAN}: vector of length \code{n} of means.
@@ -1065,7 +1078,6 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 #'   \item \strong{DECOMPVAR}: Decomposition of the total variability for each component
 #'   \item \strong{RESERR}: differences between the climate change responses and the additive anova formula (grand mean + main effects)
 #'   \item \strong{Xmat}: matrix of predictors
-#'   \item \strong{Xref}: reference predictor values
 #'   \item \strong{Xfut}: future predictor values
 #'   \item \strong{paralType}: type of parallelisation (Time or Grid)
 #'   \item \strong{namesEff}: names of the main effects
@@ -1108,7 +1120,7 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 #' # RUN QUALYPSO
 #' ##########################################################################
 #' # call main QUALYPSO function: two arguments are mandatory:
-#' # - Y: Climate projections for nS scenarions and nY time steps. if Y is a matrix nS x nY, we
+#' # - Y: Climate projections for nS scenarios and nY time steps. if Y is a matrix nS x nY, we
 #' # run QUALYPSO nY times, for each time step. If Y is an array nG x nS x nY, for nG grid points,
 #' # we run QUALYPSO nG times, for each grid point, for one time step specified using the argument
 #' # iFut
@@ -1153,7 +1165,7 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 #' listOption = list(typeChangeVariable='abs')
 #'
 #' # call QUALYPSO
-#' QUALYPSO.time = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_time_vec,Xref=1999,
+#' QUALYPSO.time = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_time_vec,
 #'                          Xfut=Xfut_time,listOption=listOption)
 #'
 #' # grand mean effect
@@ -1179,23 +1191,23 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 #' listOption = list(typeChangeVariable='abs')
 #'
 #' # call QUALYPSO
-#' QUALYPSO.globaltas = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_globaltas,Xref=13,
+#' QUALYPSO.globaltas = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_globaltas,
 #'                               Xfut=Xfut_globaltas,listOption=listOption)
 #'
 #' # grand mean effect
-#' plotQUALYPSOgrandmean(QUALYPSO.globaltas,xlab="Global temperature (Celsius)")
+#' plotQUALYPSOgrandmean(QUALYPSO.globaltas,xlab="Global warming (Celsius)")
 #'
 #' # main GCM effects
-#' plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="GCM",xlab="Global temperature (Celsius)")
+#' plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="GCM",xlab="Global warming (Celsius)")
 #'
 #' # main RCM effects
-#' plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="RCM",xlab="Global temperature (Celsius)")
+#' plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="RCM",xlab="Global warming (Celsius)")
 #'
 #' # mean change and associated uncertainties
-#' plotQUALYPSOMeanChangeAndUncertainties(QUALYPSO.globaltas,xlab="Global temperature (Celsius)")
+#' plotQUALYPSOMeanChangeAndUncertainties(QUALYPSO.globaltas,xlab="Global warming (Celsius)")
 #'
 #' # variance decomposition
-#' plotQUALYPSOTotalVarianceDecomposition(QUALYPSO.globaltas,xlab="Global temperature (Celsius)")
+#' plotQUALYPSOTotalVarianceDecomposition(QUALYPSO.globaltas,xlab="Global warming (Celsius)")
 #'
 #' @references Evin, G., B. Hingray, J. Blanchet, N. Eckert, S. Morin, and D. Verfaillie (2020)
 #' Partitioning Uncertainty Components of an Incomplete Ensemble of Climate Projections Using Data Augmentation.
@@ -1204,7 +1216,7 @@ lm.ANOVA = function(phiStar,scenAvail,listOption=NULL,namesEff){
 #' @export
 #'
 #' @author Guillaume Evin
-QUALYPSO = function(Y,scenAvail,X=NULL,Xref=NULL,Xfut=NULL,iFut=NULL,listOption=NULL){
+QUALYPSO = function(Y,scenAvail,X=NULL,Xfut=NULL,iFut=NULL,listOption=NULL){
   ######### Check inputs and assign default values ##########
 
   ######## Check list of options ########
@@ -1248,30 +1260,22 @@ QUALYPSO = function(Y,scenAvail,X=NULL,Xref=NULL,Xfut=NULL,iFut=NULL,listOption=
       Xmat = matrix(rep(X,nS),byrow=T,nrow=nS,ncol=nY)
     }
   }else if(is.matrix(X)){
-    if(any(dim(X)!=dim(Y))){
-      stop('if X is provided as a matrix, its size must match the size of Y')
-    }else{
-      Xmat = X
+    Xmat = X
+    if(length(dim(Y))==2){
+      if(any(dim(X)!=dim(Y))){
+        stop('if X is provided as a matrix and Y as a grid, its size must match the size of Y')
+      }
+    }else if(length(dim(Y))==3){
+      if(any(dim(X)!=dim(Y)[c(2,3)])){
+        stop('if X is provided as a matrix, its first dimension must match the second
+             dimension of Y (number of scenarios) and and its second dimension must match
+             the third dimension of Y (number of future predictions)')
+      }
     }
   }else{
     stop('X must be NULL, a vector or a matrix')
   }
 
-  # Xref is the reference value for X used to compute absolute or relative changes
-  # usually indicating the reference (control) period of the current climate
-  if(is.null(Xref)){
-    Xref=rep(min(Xmat),nS)
-  }else{
-    # if Xref is provided, we check that is a single value within the values of X
-    if(!any(length(Xref)==c(1,nS))|!is.numeric(Xref)){
-      stop('Xref must be a single numeric value or a vector of length nS')
-    }
-
-    # recycle Xref if it is a single value
-    if(length(Xref)==1){
-      Xref = rep(Xref,nS)
-    }
-  }
 
   # Xfut are the values for X used to compute absolute or relative changes
   # usually indicating the future periods. When a grid is provided for Y, it must
@@ -1286,13 +1290,14 @@ QUALYPSO = function(Y,scenAvail,X=NULL,Xref=NULL,Xfut=NULL,iFut=NULL,listOption=
     }else if(is.matrix(X)){
       Xfut = seq(from=min(X),to=max(X),length.out=10)
     }
-  }else if(!is.vector(Xfut)|!is.numeric(Xfut)){
-    stop('Xfut must be a vector')
+  }else if(!(is.vector(Xfut)&is.numeric(Xfut))){
+    stop('Xfut must be a vector of numerical values')
   }else if(length(Xfut)==1){
     stop('Xfut must be a vector with a length greater than 1')
   }else if(min(Xfut)<min(Xmat)|max(Xfut)>max(Xmat)){
     stop('Xfut must be within the range of X')
   }
+
 
   if(paralType == 'Grid'){
     # if Y is an array, iFut must be provided (we provide the ANOVA decomposition
@@ -1306,7 +1311,11 @@ QUALYPSO = function(Y,scenAvail,X=NULL,Xref=NULL,Xfut=NULL,iFut=NULL,listOption=
     }
   }
 
-
+  # register clusters
+  if(listOption$nCluster>1){
+    cl <- parallel::makeCluster(listOption$nCluster)
+    doParallel::registerDoParallel(cl)
+  }
 
 
   ##############################################
@@ -1324,14 +1333,19 @@ QUALYPSO = function(Y,scenAvail,X=NULL,Xref=NULL,Xfut=NULL,iFut=NULL,listOption=
   ##############################################
   # extract climate response
   if(paralType == 'Time'){
-    climResponse = fit.climate.response(Y,
-                                        spar=listOption$spar,
-                                        Xmat=Xmat, Xref=Xref, Xfut=Xfut,
-                                        typeChangeVariable=listOption$typeChangeVariable)
+    if(is.null(listOption$climResponse)){
+      climResponse = fit.climate.response(Y,
+                                          args.smooth.spline=listOption$args.smooth.spline,
+                                          Xmat=Xmat, Xfut=Xfut,
+                                          typeChangeVariable=listOption$typeChangeVariable)
+    }else{
+      climResponse = listOption$climResponse
+    }
 
     # extract quantities from these fits
     phiStar = climResponse$phiStar
     etaStar = climResponse$etaStar
+    YStar = climResponse$YStar
     phi = climResponse$phi
 
     # internal variability
@@ -1341,32 +1355,68 @@ QUALYPSO = function(Y,scenAvail,X=NULL,Xref=NULL,Xfut=NULL,iFut=NULL,listOption=
     phiStar.ANOVA = phiStar
 
   }else if(paralType == 'Grid'){
-    climResponse = list()
-    phiStarAllTime = etaStarAllTime = phiAllTime = array(dim=d)
-    varInterVariability = vector(length=nG)
-    for(g in 1:nG){
-      # check is some simulation chains are entirely missing
-      hasAllNa = apply(Y[g,,],1,function(x) all(is.na(x)))
+    if(is.null(listOption$climResponse)){
+      # initialise outputs
+      phiStar = phi = array(dim=c(nG,nS,length(Xfut)))
+      etaStar = YStar = array(dim=d)
+      varInterVariability = vector(length=nG)
 
-      if(any(hasAllNa)){
-        climResponse[[g]] = NULL
-        phiStarAllTime[g,,] = NA
-        etaStarAllTime[g,,] = NA
-        phiAllTime[g,,] = NA
-        varInterVariability[g] = NA
+      # parallelize if required
+      if(listOption$nCluster==1){
+        for(g in 1:nG){
+          # check is some simulation chains are entirely missing
+          hasAllNa = apply(Y[g,,],1,function(x) all(is.na(x)))
+          if(any(hasAllNa)){
+            phiStar[g,,] = NA
+            etaStar[g,,] = NA
+            phi[g,,] = NA
+            varInterVariability[g] = NA
+          }else{
+            climResponse = fit.climate.response(Y[g,,],
+                                                args.smooth.spline=listOption$args.smooth.spline,
+                                                Xmat=Xmat, Xfut=Xfut,
+                                                typeChangeVariable=listOption$typeChangeVariable)
+
+            # extract quantities from these fits
+            phiStar[g,,] = climResponse$phiStar
+            etaStar[g,,] = climResponse$etaStar
+            YStar[g,,] = climResponse$YStar
+            phi[g,,] = climResponse$phi
+            varInterVariability[g] = climResponse$varInterVariability
+          }
+        }
       }else{
-        climResponse[[g]] = fit.climate.response(Y[g,,],
-                                                 spar=listOption$spar,
-                                                 Xmat=Xmat, Xref=Xref, Xfut=Xfut,
-                                                 typeChangeVariable=listOption$typeChangeVariable)
+        g = NULL # avoid warning during check
+        climResponse <- foreach(g=1:nG,.export=c("fit.climate.response")) %dopar% {
+          # check is some simulation chains are entirely missing
+          hasAllNa = apply(Y[g,,],1,function(x) all(is.na(x)))
+          if(any(hasAllNa)){
+            climResponse.g = list(phiStar = NA, etaStar = NA, phi = NA,
+                                  varInterVariability = NA)
+          }else{
+            climResponse.g = fit.climate.response(Y[g,,],
+                                                  args.smooth.spline=listOption$args.smooth.spline,
+                                                  Xmat=Xmat, Xfut=Xfut,
+                                                  typeChangeVariable=listOption$typeChangeVariable)
+          }
+          return(climResponse.g)
+        }
 
-        # extract quantities from these fits
-        phiStar[g,,] = climResponse[[g]]$phiStar
-        etaStar[g,,] = climResponse[[g]]$etaStar
-        phi[g,,] = climResponse[[g]]$phi
-        varInterVariability[g] = climResponse[[g]]$varInterVariability
+        # fill the matrices
+        for(g in 1:nG){
+          phiStar[g,,] = climResponse[[g]]$phiStar
+          etaStar[g,,] = climResponse[[g]]$etaStar
+          phi[g,,] = climResponse[[g]]$phi
+          varInterVariability[g] = climResponse[[g]]$varInterVariability
+        }
       }
-
+    }else{
+      climResponse = listOption$climResponse
+      YStar = climResponse$YStar
+      phiStar = climResponse$phiStar
+      etaStar = climResponse$etaStar
+      phi = climResponse$phi
+      varInterVariability = climResponse$varInterVariability
     }
 
     # phiStar for ANOVA
@@ -1381,6 +1431,26 @@ QUALYPSO = function(Y,scenAvail,X=NULL,Xref=NULL,Xfut=NULL,iFut=NULL,listOption=
   }
 
   #====================================================================================================
+
+  ################
+  # Check for singularities
+
+  # contrasts
+  list.contrasts = list()
+  for(j in 1:length(namesEff)){
+    list.contrasts[[namesEff[j]]] = contr.sum
+  }
+  # formula
+  formula = paste0("phiStar ~ ",paste0(namesEff,collapse = " + "))
+  #lm
+  lm.data = scenAvail
+  lm.data$phiStar=phiStar.ANOVA[,ncol(phiStar.ANOVA)]
+  lm.out = lm(formula, lm.data,contrasts=list.contrasts)
+  if(any(is.na(lm.out$coefficients))){
+    stop("singular fit encountered: the effects cannot be estimated (ill-posed problem)")
+  }
+
+  ##################
   # ANOVA on phiStar
   if(listOption$ANOVAmethod=="QUALYPSO"){
     anova = QUALYPSO.ANOVA(phiStar = phiStar.ANOVA, scenAvail = scenAvail, listOption = listOption, namesEff = namesEff)
@@ -1426,10 +1496,15 @@ QUALYPSO = function(Y,scenAvail,X=NULL,Xref=NULL,Xfut=NULL,iFut=NULL,listOption=
   DECOMPVAR = Vbind/replicate(n = ncol(Vbind), TOTALVAR)
   colnames(DECOMPVAR) = c(namesEff,"ResidualVar","InternalVar")
 
+  # stop clusters
+  if(listOption$nCluster>1){
+    parallel::stopCluster(cl)
+  }
+
 
   #############################################
   # return results
-  return(list(CLIMATEESPONSE=list(phiStar=phiStar,etaStar=etaStar,phi=phi),
+  return(list(CLIMATEESPONSE=list(phiStar=phiStar,etaStar=etaStar,YStar=YStar,phi=phi),
               GRANDMEAN=anova$GRANDMEAN,
               MAINEFFECT=anova$MAINEFFECT,
               CHANGEBYEFFECT=anova$CHANGEBYEFFECT,
@@ -1440,13 +1515,97 @@ QUALYPSO = function(Y,scenAvail,X=NULL,Xref=NULL,Xfut=NULL,iFut=NULL,listOption=
               TOTALVAR=TOTALVAR,
               DECOMPVAR=DECOMPVAR,
               RESERR=RESERR,
-              Xmat=Xmat,Xref=Xref,Xfut=Xfut,
+              Xmat=Xmat,Xfut=Xfut,
               paralType=paralType,namesEff=namesEff,
               Y=Y,listOption=anova$listOption,
               listScenarioInput=anova$listScenarioInput))
 }
 
 
+#==============================================================================
+#' plotQUALYPSOclimateResponse
+#'
+#' Plot the climate responses.
+#'
+#' @param QUALYPSOOUT output from \code{\link{QUALYPSO}}
+#' @param lim y-axis limits (default is NULL)
+#' @param xlab x-axis label
+#' @param ylab y-axis label
+#' @param ... additional arguments to be passed to \code{\link[graphics]{plot}}
+#'
+#' @export
+#'
+#' @author Guillaume Evin
+plotQUALYPSOclimateResponse = function(QUALYPSOOUT,lim=NULL,xlab="X",ylab="Y",...){
+  # vector of predictors
+  Xfut = QUALYPSOOUT$Xfut
+
+  # retrieve mean
+  phi = QUALYPSOOUT$CLIMATEESPONSE$phi
+
+  # list of scenarios
+  scenAvail = QUALYPSOOUT$listScenarioInput$scenAvail
+
+  # Xmat and Y arguments
+  Xmat = QUALYPSOOUT$Xmat
+  Y = QUALYPSOOUT$Y
+
+  # number of scenarios
+  nS = nrow(Y)
+
+  for(iS in 1:nS){
+    Ys = Y[iS,]
+    Xs = Xmat[iS,]
+    phis = phi[iS,]
+
+    plot(-1, -1, xlim = range(c(Xs,Xfut)), ylim = range(c(Ys,phis)),
+         main=paste0(scenAvail[iS,],collapse = " / "),
+         xlab = xlab, ylab = ylab, ...)
+
+    # add lines of raw projection and climate projection
+    lines(Xs, Ys, lwd = 1)
+    lines(Xfut, phis, lwd = 3)
+
+    # add legend
+    legend("topleft",legend = c("Raw projection", "Climate response"),
+           lty=1,lwd=c(1,3),bty="n")
+
+    readline(prompt = "Press Enter")
+  }
+}
+
+
+#==============================================================================
+#' plotQUALYPSOclimateChangeResponse
+#'
+#' Plot climate change responses.
+#'
+#' @param QUALYPSOOUT output from \code{\link{QUALYPSO}}
+#' @param lim y-axis limits (default is NULL)
+#' @param xlab x-axis label
+#' @param ylab y-axis label
+#' @param ... additional arguments to be passed to \code{\link[graphics]{plot}}
+#'
+#' @export
+#'
+#' @author Guillaume Evin
+plotQUALYPSOclimateChangeResponse = function(QUALYPSOOUT,lim=NULL,xlab="",
+                                             ylab="Climate change response",...){
+  # vector of predictors
+  Xfut = QUALYPSOOUT$Xfut
+
+  # retrieve mean
+  phiStar = QUALYPSOOUT$CLIMATEESPONSE$phiStar
+
+
+  # initiate plot
+  if(is.null(lim)) lim = range(phiStar)
+  plot(-100,-100,xlim=range(Xfut),ylim=c(lim[1],lim[2]),xlab=xlab,ylab=ylab,...)
+
+  for(i in 1:nrow(phiStar)){
+    lines(Xfut,phiStar[i,],lwd=3,col=i)
+  }
+}
 
 #==============================================================================
 #' plotQUALYPSOgrandmean
@@ -1470,13 +1629,11 @@ plotQUALYPSOgrandmean = function(QUALYPSOOUT,lim=NULL,col='black',xlab="",
   Xfut = QUALYPSOOUT$Xfut
 
   # retrieve mean
-  meanRaw = QUALYPSOOUT$GRANDMEAN$MEAN
-  meanPred = predict(loess(meanRaw~Xfut))
+  meanPred = QUALYPSOOUT$GRANDMEAN$MEAN
 
   # retrieve limits
-  CIraw = QUALYPSOOUT$GRANDMEAN$CI
-  binf = predict(loess(CIraw[,1]~Xfut))
-  bsup = predict(loess(CIraw[,2]~Xfut))
+  binf = QUALYPSOOUT$GRANDMEAN$CI[,1]
+  bsup = QUALYPSOOUT$GRANDMEAN$CI[,2]
 
   # colors polygon
   colPoly = adjustcolor(col,alpha.f=0.2)
@@ -1537,22 +1694,15 @@ plotQUALYPSOeffect = function(QUALYPSOOUT,nameEff,includeMean=FALSE,lim=NULL,
   nEff = dim(EffHat$MEAN)[2]
 
   # retrieve mean
-  meanRaw = EffHat$MEAN
-  meanPred = apply(meanRaw,2,function(x) predict(loess(x~Xfut)))
+  meanPred = EffHat$MEAN
 
   # add CI if the ANOVA method is QUALYPSO
   add.CI = QUALYPSOOUT$listOption$ANOVAmethod=="QUALYPSO"
 
-  # get CI
-  if(add.CI){
-    CIRaw = EffHat$CI
-    CIsmooth = apply(CIRaw,c(2,3),function(x) predict(loess(x~Xfut)))
-  }
-
   # initiate plot
   if(is.null(lim)){
     if(add.CI){
-      lim = range(CIsmooth,na.rm=TRUE)
+      lim = range(EffHat$CI,na.rm=TRUE)
     }else{
       lim = range(meanPred,na.rm=TRUE)
     }
@@ -1565,7 +1715,7 @@ plotQUALYPSOeffect = function(QUALYPSOOUT,nameEff,includeMean=FALSE,lim=NULL,
 
     # add confidence interval
     if(add.CI){
-      polygon(c(Xfut,rev(Xfut)),c(CIsmooth[,1,i],rev(CIsmooth[,2,i])),col=colPoly,lty=0)
+      polygon(c(Xfut,rev(Xfut)),c(EffHat$CI[,1,i],rev(EffHat$CI[,2,i])),col=colPoly,lty=0)
     }
 
     # add median
@@ -1647,14 +1797,12 @@ plotQUALYPSOTotalVarianceDecomposition = function(QUALYPSOOUT,vecEff=NULL,
 
   # figure
   col = col[1:(nEff+2)]
-  cum=cum.smooth=rep(0,nFut)
+  cum=rep(0,nFut)
   plot(-1,-1,xlim=range(Xfut),ylim=c(0,1),xaxs="i",yaxs="i",las=1,xlab=xlab,ylab=ylab,...)
   for(i in 1:(nEff+2)){
-    cumPrevious = cum.smooth
+    cumPrevious = cum
     cum = cum + VARDECOMP[,i]
-    cum.smooth = predict(loess(cum~Xfut))
-    cum.smooth[cum.smooth<0] = 0
-    polygon(c(Xfut,rev(Xfut)),c(cumPrevious,rev(cum.smooth)),col=rev(col)[i],lty=1)
+    polygon(c(Xfut,rev(Xfut)),c(cumPrevious,rev(cum)),col=rev(col)[i],lty=1)
   }
   abline(h=axTicks(side=2),col="black",lwd=0.3,lty=1)
 
@@ -1726,13 +1874,11 @@ plotQUALYPSOTotalVarianceByScenario = function(QUALYPSOOUT,nameEff,nameScenario,
 
   # obtain limits of the intervals, proportion corresponds to the part of the variance, lower and upper than the mean
   limIntInf = limIntSup = matrix(nrow=nEff+2,ncol=nFut)
-  limIntInf[1,] = predict(loess(binf~Xfut))
-  limIntSup[1,] = predict(loess(bsup~Xfut))
+  limIntInf[1,] = binf
+  limIntSup[1,] = bsup
   for(i in 1:(nEff+1)){
-    binfi = limIntInf[i,]+vNormRev[i,]*(meanPred-binf)
-    limIntInf[i+1,] = predict(loess(binfi~Xfut))
-    bsupi = limIntSup[i,]-vNormRev[i,]*(bsup-meanPred)
-    limIntSup[i+1,] = predict(loess(bsupi~Xfut))
+    limIntInf[i+1,] = limIntInf[i,]+vNormRev[i,]*(meanPred-binf)
+    limIntSup[i+1,] = limIntSup[i,]-vNormRev[i,]*(bsup-meanPred)
   }
 
   # figure
@@ -1741,7 +1887,7 @@ plotQUALYPSOTotalVarianceByScenario = function(QUALYPSOOUT,nameEff,nameScenario,
   for(i in 1:(nEff+2)){
     polygon(c(Xfut,rev(Xfut)),c(limIntInf[i,],rev(limIntSup[i,])),col=col[i],lty=1)
   }
-  lines(Xfut,predict(loess(meanPred~Xfut)),col="white",lwd=1)
+  lines(Xfut,meanPred,col="white",lwd=1)
 
   # add horizontal lines
   abline(h=axTicks(side=2),col="black",lwd=0.3,lty=1)
@@ -1802,13 +1948,11 @@ plotQUALYPSOMeanChangeAndUncertainties = function(QUALYPSOOUT,col=NULL,ylim=NULL
 
   # obtain limits of the intervals, proportion corresponds to the part of the variance, lower and upper than the mean
   limIntInf = limIntSup = matrix(nrow=nEff+2,ncol=nFut)
-  limIntInf[1,] = predict(loess(binf~Xfut))
-  limIntSup[1,] = predict(loess(bsup~Xfut))
+  limIntInf[1,] = binf
+  limIntSup[1,] = bsup
   for(i in 1:(nEff+1)){
-    binfi = limIntInf[i,]+vNormRev[i,]*(meanPred-binf)
-    limIntInf[i+1,] = predict(loess(binfi~Xfut))
-    bsupi = limIntSup[i,]-vNormRev[i,]*(bsup-meanPred)
-    limIntSup[i+1,] = predict(loess(bsupi~Xfut))
+    limIntInf[i+1,] = limIntInf[i,]+vNormRev[i,]*(meanPred-binf)
+    limIntSup[i+1,] = limIntSup[i,]-vNormRev[i,]*(bsup-meanPred)
   }
 
   # figure
@@ -1817,7 +1961,7 @@ plotQUALYPSOMeanChangeAndUncertainties = function(QUALYPSOOUT,col=NULL,ylim=NULL
   for(i in 1:(nEff+2)){
     polygon(c(Xfut,rev(Xfut)),c(limIntInf[i,],rev(limIntSup[i,])),col=col[i],lty=1)
   }
-  lines(Xfut,predict(loess(meanPred~Xfut)),col="white",lwd=1)
+  lines(Xfut,meanPred,col="white",lwd=1)
 
   # add horizontal lines
   abline(h=axTicks(side=2),col="black",lwd=0.3,lty=1)
@@ -1826,5 +1970,104 @@ plotQUALYPSOMeanChangeAndUncertainties = function(QUALYPSOOUT,col=NULL,ylim=NULL
   if(addLegend){
     namesEff = QUALYPSOOUT$names
     legend('topleft',bty='n',cex=1.1, fill=rev(col), legend=c(namesEff,'Res. Var.','Int. Variab.'))
+  }
+}
+
+
+#==============================================================================
+#' plotQUALYPSOMeanChangeAndUncertaintiesBetatest
+#'
+#' Plot fraction of total variance explained by each source of uncertainty.
+#'
+#' @param QUALYPSOOUT output from \code{\link{QUALYPSO}}
+#' @param col colors for each source of uncertainty, the first two colors corresponding to internal variability and residual variability, respectively
+#' @param ylim y-axis limits
+#' @param xlab x-axis label
+#' @param ylab y-axis label
+#' @param addLegend if TRUE, a legend is added
+#' @param ... additional arguments to be passed to \code{\link[graphics]{plot}}
+#'
+#' @export
+#'
+#' @author Guillaume Evin
+plotQUALYPSOMeanChangeAndUncertaintiesBetatest = function(QUALYPSOOUT,col=NULL,ylim=NULL,
+                                                          xlab="",ylab="Change variable",addLegend=TRUE,...){
+
+  # probCI
+  probCI = QUALYPSOOUT$listOption$probCI
+
+  # future predictor values
+  Xfut = QUALYPSOOUT$Xfut
+  nFut = length(Xfut)
+
+  # phiStar
+  phiStar = QUALYPSOOUT$CLIMATEESPONSE$phiStar
+
+  # Ystar: change variable from the projection (Y(t)-phi(c))
+  YStar = QUALYPSOOUT$CLIMATEESPONSE$YStar
+
+  # compute a multiplicative factor SDtot/SD(phi*) to match the standard deviation
+  # obtained from QUALYPSO
+  sd.qua = sqrt(QUALYPSOOUT$TOTALVAR-QUALYPSOOUT$INTERNALVAR)
+  sd.emp = apply(phiStar,2,sd)
+  sd.emp[sd.emp==0] = 1 # avoid NaN for the reference year
+  sd.corr = sd.qua/sd.emp
+  phiStar.corr = phiStar*t(replicate(nrow(phiStar),sd.corr))
+
+  # mean prediction
+  meanPred = QUALYPSOOUT$GRANDMEAN$MEAN
+
+  # variance decomposition without the internal var.
+  Vbind = cbind(QUALYPSOOUT$EFFECTVAR,QUALYPSOOUT$RESIDUALVAR$MEAN)
+  Vtot = Rfast::rowsums(Vbind)
+  DECOMPVAR = Vbind/replicate(n = ncol(Vbind), Vtot)
+  vNorm = t(DECOMPVAR)
+  nEff = nrow(vNorm)-1
+  vNormRev = apply(vNorm,2,rev)
+
+  # compute the lower bound if the distribution is gaussian
+  binf = apply(phiStar.corr,2,quantile,probs = (1-probCI)/2)
+  bsup = apply(phiStar.corr,2,quantile,probs = 0.5+probCI/2)
+
+  # obtain limits of the intervals, proportion corresponds to the part of the variance, lower and upper than the mean
+  limIntInf = limIntSup = matrix(nrow=nEff+1,ncol=nFut)
+  limIntInf[1,] = binf
+  limIntSup[1,] = bsup
+  for(i in 1:nEff){
+    limIntInf[i+1,] = limIntInf[i,]+vNormRev[i,]*(meanPred-binf)
+    limIntSup[i+1,] = limIntSup[i,]-vNormRev[i,]*(bsup-meanPred)
+  }
+
+  # figure
+  if(is.null(col)){
+    default.col = c("yellow","cadetblue1","blue1","darkgreen","darkgoldenrod4","darkorchid1")
+    col = default.col[1:(nEff+1)]
+  }
+
+  # start figure
+  if(is.null(ylim)) ylim = range(YStar,na.rm=T)
+  plot(-1,-1,xlim=range(Xfut),ylim=ylim,xlab=xlab,ylab=ylab,xaxs="i",yaxs="i",las=1,...)
+
+  # add raw climate change projections
+  Xmat = QUALYPSOOUT$Xmat
+  for(iS in 1:nrow(YStar)){
+    lines(Xmat[iS,],YStar[iS,],lwd=0.5,col="gray")
+  }
+
+  # add intervals
+  for(i in 1:(nEff+1)){
+    polygon(c(Xfut,rev(Xfut)),c(limIntInf[i,],rev(limIntSup[i,])),col=col[i],lty=1)
+  }
+
+  # mean climate change response
+  lines(Xfut,meanPred,col="white",lwd=1)
+
+  # add horizontal lines
+  abline(h=axTicks(side=2),col="black",lwd=0.3,lty=1)
+
+  # legend
+  if(addLegend){
+    namesEff = QUALYPSOOUT$names
+    legend('topleft',bty='n',cex=1.1, fill=rev(col), legend=c(namesEff,'Res. Var.'))
   }
 }

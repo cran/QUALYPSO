@@ -4,21 +4,13 @@
 \alias{QUALYPSO}
 \title{QUALYPSO}
 \usage{
-QUALYPSO(
-  Y,
-  scenAvail,
-  X = NULL,
-  Xref = NULL,
-  Xfut = NULL,
-  iFut = NULL,
-  listOption = NULL
-)
+QUALYPSO(Y, scenAvail, X = NULL, Xfut = NULL, iFut = NULL, listOption = NULL)
 }
 \arguments{
 \item{Y}{matrix \code{nS} x \code{nY} or array \code{nG} x \code{nS} x \code{nY} of climate projections.}
 
 \item{scenAvail}{data.frame \code{nS} x \code{nEff} with the \code{nEff} characteristics
-(e.g. type of GCM) for each of the \code{nS} x \code{nS} scenarios. The number of characteristics
+(e.g. type of GCM) for each of the \code{nS} scenarios. The number of characteristics
  \code{nEff} corresponds to the number of main effects that will be included in the ANOVA model.}
 
 \item{X}{(optional) predictors corresponding to the projections, e.g. time or global temperature.
@@ -26,22 +18,22 @@ It can be a vector if the predictor is the same for all scenarios (e.g. \code{X=
 a matrix of the same size as Y if these predictors are different for the scenarios. By default,
 a vector \code{1:nY} is created.}
 
-\item{Xref}{(optional) reference/control value of the predictor (e.g. the reference period).
-\code{Xref} can be a single value or a vector of length \code{nS} if \code{Xref} is different
- for each climate projection. By default, \code{Xref} is taken as the minimum value of X.}
-
-\item{Xfut}{(optional) values of the predictor over which the ANOVA will be applied. It must be
+\item{Xfut}{(optional) \code{nF} values of the predictor over which the ANOVA will be applied. It must be
 a vector of values within the range of values of X. By default, it corresponds to X if X is a vector,
 \code{1:nY} if X is \code{NULL} or a vector of 10 values equally spaced between the minimum and
 maximum values of X if X is a matrix.}
 
-\item{iFut}{index in \code{1:length(Xfut)} corresponding to a future predictor value . This index is
+\item{iFut}{index in \code{1:nF} corresponding to a future predictor value . This index is
 necessary when \code{Y} is an array \code{nG} x \code{nS} x \code{nY} available for \code{nG} grid points.
-Indeed, in this case, we run QUALYPSO only for one future predictor.}
+Indeed, in this case, we run QUALYPSO only for one future predictor. The first value defines the reference
+period or warming level.}
 
 \item{listOption}{(optional) list of options
 \itemize{
-  \item \strong{spar}: smoothing parameter \code{spar} in \link[stats]{smooth.spline}: typically (but not necessarily) in (0,1].
+   \item \strong{args.smooth.spline}: list of arguments to be passed to
+   \code{\link[stats]{smooth.spline}}. The \code{names} attribute of
+   \code{args.smooth.spline} gives the argument names (see \code{\link[base]{do.call}}).
+   The default option runs \code{smooth.spline} with \code{spar}=1.
   \item \strong{typeChangeVariable}: type of change variable: "abs" (absolute, value by default) or "rel" (relative).
   \item \strong{ANOVAmethod}: ANOVA method: "QUALYPSO" applies the method described in Evin et al. (2020),
   "lm" applies a simple linear model to estimate the main effects.
@@ -57,6 +49,11 @@ Indeed, in this case, we run QUALYPSO only for one future predictor.}
   \item \strong{quantilePosterior}: vector of probabilities (in [0,1]) for which
   we compute the quantiles from the posterior distributions
    \code{quantilePosterior = c(0.005,0.025,0.05,0.1,0.25,0.33,0.5,0.66,0.75,0.9,0.95,0.975,0.995)} by default.
+  \item \strong{climResponse}: NULL by default. If it is provided, it must correspond to the outputs
+  of \code{\link{fit.climate.response}}, i.e. a list with \code{phiStar} [nS x nF], \code{etaStar} [nS x nY],
+   \code{phi} [nS x nF] and \code{varInterVariability} [scalar] if \code{Y} is a matrix [nS x nY],
+   or a list with \code{phiStar} [nG x nS x nF], \code{etaStar} [nG x nS x nY], \code{phi} [nG x nS x nF] and
+    \code{varInterVariability} vector of length \code{nG} if \code{Y} is an array [nG x nS x nY].
 }}
 }
 \value{
@@ -66,7 +63,8 @@ if \code{Y} is a matrix or for each grid point if \code{Y} is an array, with the
   \item \strong{CLIMATEESPONSE}: list of climate change responses and
  corresponding internal variability. Contains \code{phiStar} (climate change
  responses), \code{etaStar} (deviation from the climate change responses as
- a result of internal variability), and \code{phi} (fitted climate responses).
+ a result of internal variability), \code{Ystar} (change variable from the
+ projections),and \code{phi} (fitted climate responses).
   \item \strong{GRANDMEAN}: List of estimates for the grand mean:
   \itemize{
      \item \strong{MEAN}: vector of length \code{n} of means.
@@ -132,7 +130,6 @@ if \code{Y} is a matrix or for each grid point if \code{Y} is an array, with the
   \item \strong{DECOMPVAR}: Decomposition of the total variability for each component
   \item \strong{RESERR}: differences between the climate change responses and the additive anova formula (grand mean + main effects)
   \item \strong{Xmat}: matrix of predictors
-  \item \strong{Xref}: reference predictor values
   \item \strong{Xfut}: future predictor values
   \item \strong{paralType}: type of parallelisation (Time or Grid)
   \item \strong{namesEff}: names of the main effects
@@ -178,7 +175,7 @@ scenAvail.synth = data.frame(GCM=c('GCM1','GCM1','GCM2'),RCM=c('RCM1','RCM2','RC
 # RUN QUALYPSO
 ##########################################################################
 # call main QUALYPSO function: two arguments are mandatory:
-# - Y: Climate projections for nS scenarions and nY time steps. if Y is a matrix nS x nY, we
+# - Y: Climate projections for nS scenarios and nY time steps. if Y is a matrix nS x nY, we
 # run QUALYPSO nY times, for each time step. If Y is an array nG x nS x nY, for nG grid points,
 # we run QUALYPSO nG times, for each grid point, for one time step specified using the argument
 # iFut
@@ -223,7 +220,7 @@ plotQUALYPSOMeanChangeAndUncertainties(QUALYPSO.synth,xlab="Years")
 listOption = list(typeChangeVariable='abs')
 
 # call QUALYPSO
-QUALYPSO.time = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_time_vec,Xref=1999,
+QUALYPSO.time = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_time_vec,
                          Xfut=Xfut_time,listOption=listOption)
 
 # grand mean effect
@@ -249,23 +246,23 @@ plotQUALYPSOTotalVarianceDecomposition(QUALYPSO.time,xlab="Years")
 listOption = list(typeChangeVariable='abs')
 
 # call QUALYPSO
-QUALYPSO.globaltas = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_globaltas,Xref=13,
+QUALYPSO.globaltas = QUALYPSO(Y=Y,scenAvail=scenAvail,X=X_globaltas,
                               Xfut=Xfut_globaltas,listOption=listOption)
 
 # grand mean effect
-plotQUALYPSOgrandmean(QUALYPSO.globaltas,xlab="Global temperature (Celsius)")
+plotQUALYPSOgrandmean(QUALYPSO.globaltas,xlab="Global warming (Celsius)")
 
 # main GCM effects
-plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="GCM",xlab="Global temperature (Celsius)")
+plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="GCM",xlab="Global warming (Celsius)")
 
 # main RCM effects
-plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="RCM",xlab="Global temperature (Celsius)")
+plotQUALYPSOeffect(QUALYPSO.globaltas,nameEff="RCM",xlab="Global warming (Celsius)")
 
 # mean change and associated uncertainties
-plotQUALYPSOMeanChangeAndUncertainties(QUALYPSO.globaltas,xlab="Global temperature (Celsius)")
+plotQUALYPSOMeanChangeAndUncertainties(QUALYPSO.globaltas,xlab="Global warming (Celsius)")
 
 # variance decomposition
-plotQUALYPSOTotalVarianceDecomposition(QUALYPSO.globaltas,xlab="Global temperature (Celsius)")
+plotQUALYPSOTotalVarianceDecomposition(QUALYPSO.globaltas,xlab="Global warming (Celsius)")
 
 }
 \references{

@@ -1,8 +1,8 @@
-6e73342cc5026ad3fa0f4f453d342aea *DESCRIPTION
-b44cc52e0dc31b6babcd6fd92ffc30c2 *NAMESPACE
-ac2fa0ce8cc9d875d36e494c01aee163 *R/QUALYPSO.r
+77f934f94e58f8714989f785bd99b0bc *DESCRIPTION
+2cec5662999be8f39a29df09ba54a983 *NAMESPACE
+4f956f6f77201fb43e5a5a9c0b804f4c *R/QUALYPSO.r
 6b75c955dc4e49d4927deed8bc7d0799 *R/description-data.r
-7f9a6d4a2f4fb280ddd520cbe1f87ca7 *R/imports.r
+faaaea68f2fe92d9ec8c7dc7b36ca33d *R/imports.r
 49888081a342a59dfaa64dbeddc815f7 *README.md
 10ed1eb1714509caa5d8e1261c236f4c *data/X_globaltas.rda
 d3520fc973794260b280a926946cff81 *data/X_time_mat.rda
@@ -13,7 +13,7 @@ a3a990fcba4345ff997d613b457c1622 *data/X_time_vec.rda
 a2828a24a2582e139f717fd76c4111ca *data/scenAvail.rda
 9cf88bb67af05e628a9e4a9a6bd3cf3b *man/QUALYPSO.ANOVA.Rd
 65976f187d7e53714366c89ab16bd210 *man/QUALYPSO.ANOVA.i.Rd
-83618ff8e3ca705eb21a6b343fd887aa *man/QUALYPSO.Rd
+fa7394040c1516ae46d41b59a2d0230b *man/QUALYPSO.Rd
 5d542e8831c1600d655392c0d7f89688 *man/QUALYPSO.check.option.Rd
 53b249336ad995263839b3350760ccb4 *man/QUALYPSO.process.scenario.Rd
 645406fd00ebfd5e03070e54fa4b2a7d *man/X_globaltas.Rd
@@ -22,7 +22,7 @@ eaf234d7bca487115d08dbe75725014d *man/X_time_vec.Rd
 d645086a2db300150fd97647c42eeea0 *man/Xfut_globaltas.Rd
 5ece96249ed9fbb1e80461b33aded86a *man/Xfut_time.Rd
 3e3ffd3afd053046d9376e8f5795a0e7 *man/Y.Rd
-9028e4039efcb3505e4f6df24f9da20d *man/fit.climate.response.Rd
+bf06238c8923fcc5647bcb45d6265db1 *man/fit.climate.response.Rd
 0dc2532025418a1f919e55992dc2ce14 *man/get.Qmat.Rd
 ada0d4af645acb4e3afb2bcd09a5c3cd *man/get.Qstar.mat.Rd
 36bfb68ea52fa238a2e5cc545d0db6ab *man/lm.ANOVA.Rd

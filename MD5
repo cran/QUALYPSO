@@ -1,8 +1,8 @@
-77f934f94e58f8714989f785bd99b0bc *DESCRIPTION
-2cec5662999be8f39a29df09ba54a983 *NAMESPACE
-4f956f6f77201fb43e5a5a9c0b804f4c *R/QUALYPSO.r
+4ec01c1bb962a0d08cc18321f2adf905 *DESCRIPTION
+ade8e71f9136fdff999e6051b9a0e6d0 *NAMESPACE
+ed0d69aa9264d0cca279e3da74c2e9a6 *R/QUALYPSO.r
 6b75c955dc4e49d4927deed8bc7d0799 *R/description-data.r
-faaaea68f2fe92d9ec8c7dc7b36ca33d *R/imports.r
+bfaaec65ecef3e773a54e8f257896fbd *R/imports.r
 49888081a342a59dfaa64dbeddc815f7 *README.md
 10ed1eb1714509caa5d8e1261c236f4c *data/X_globaltas.rda
 d3520fc973794260b280a926946cff81 *data/X_time_mat.rda
